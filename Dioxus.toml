@@ -4,5 +4,5 @@ asset_dir = "assets"
 
 [web.app]
 title = "Chipper · Split the bill"
-# For GitHub Pages project sites set this to the repo name, e.g. "chipper".
-# base_path = "chipper"
+# Served from / locally. The GitHub Pages workflow passes `--base-path <repo>`
+# so assets resolve under https://<user>.github.io/<repo>/.

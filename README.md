@@ -22,7 +22,13 @@ dx bundle --platform web --release
 # → target/dx/chipper/release/web/public  (serve or upload this folder)
 ```
 
-For a GitHub Pages project site, set `base_path` in `Dioxus.toml`.
+## Deploy
+
+Pushing to `main` runs [.github/workflows/deploy.yml](.github/workflows/deploy.yml):
+tests (including OCR over `tests/`), a `dx bundle` with `--base-path <repo>`, then
+a GitHub Pages deploy. One-time setup: in the repo's **Settings → Pages**, set
+**Source** to **GitHub Actions**. The site is then at
+`https://<user>.github.io/<repo>/`.
 
 ## Test
 
