@@ -4,6 +4,7 @@ mod ocr;
 mod receipt;
 mod scan;
 mod storage;
+mod warp;
 
 use dioxus::prelude::*;
 use model::{Bill, Summary};
@@ -123,6 +124,8 @@ fn Header(bill: Signal<Bill>) -> Element {
 #[derive(Clone, PartialEq)]
 enum ScanState {
     Idle,
+    /// Photo loaded; the user is placing the four crop corners.
+    Crop(scan::LoadedImage),
     Working { progress: f32, label: String },
     Review(ParsedReceipt),
     Error(String),
@@ -135,14 +138,28 @@ fn ScanPanel(bill: Signal<Bill>) -> Element {
     let mut raw_text = use_signal(String::new);
     let busy = matches!(*state.read(), ScanState::Working { .. });
 
+    let mut corners = use_signal(|| warp::FULL);
+
     let on_file = move |_| {
         spawn(async move {
             state.set(ScanState::Working { progress: 0.01, label: "Reading image...".into() });
-            let img = match scan::load_image(FILE_INPUT_ID).await {
-                Ok(i) => i,
-                Err(e) => return state.set(ScanState::Error(e)),
-            };
-            preview.set(Some(img.url));
+            match scan::load_image(FILE_INPUT_ID).await {
+                Ok(img) => {
+                    preview.set(Some(img.url.clone()));
+                    corners.set(warp::FULL);
+                    state.set(ScanState::Crop(img));
+                }
+                Err(e) => state.set(ScanState::Error(e)),
+            }
+        });
+    };
+
+    let on_scan = move |_| {
+        spawn(async move {
+            state.set(ScanState::Working { progress: 0.01, label: "Flattening...".into() });
+            if let Err(e) = crop(&corners()) {
+                return state.set(ScanState::Error(e));
+            }
             let result = run_ocrs(state).await.map(|text| {
                 let r = receipt::parse_text(&text);
                 raw_text.set(text);
@@ -160,6 +177,7 @@ fn ScanPanel(bill: Signal<Bill>) -> Element {
 
     let status = match &*state.read() {
         ScanState::Idle => "Waiting for a receipt...".to_string(),
+        ScanState::Crop(_) => "Drag the corners onto the receipt.".to_string(),
         ScanState::Working { label, .. } => label.clone(),
         ScanState::Review(r) => format!("Found {} items.", r.items.len()),
         ScanState::Error(_) => "Couldn't read that one.".to_string(),
@@ -201,6 +219,19 @@ fn ScanPanel(bill: Signal<Bill>) -> Element {
             }
 
             match state() {
+                ScanState::Crop(img) => rsx! {
+                    CropEditor { image: img, corners }
+                    div { class: "actions",
+                        button { class: "btn primary", onclick: on_scan, "Scan" }
+                        button {
+                            class: "btn",
+                            disabled: warp::is_full(&corners()),
+                            onclick: move |_| corners.set(warp::FULL),
+                            "Reset corners"
+                        }
+                        button { class: "btn ghost", onclick: move |_| state.set(ScanState::Idle), "Cancel" }
+                    }
+                },
                 ScanState::Error(e) => rsx! {
                     p { class: "alert", "{e}" }
                 },
@@ -242,6 +273,99 @@ fn ScanPanel(bill: Signal<Bill>) -> Element {
             }
         }
     }
+}
+
+/// Four draggable corners over the photo. A corner is grabbed with pointer
+/// capture, so a drag keeps tracking outside the photo; positions are kept
+/// normalised (0..1) and clamped to the image.
+#[component]
+fn CropEditor(image: scan::LoadedImage, corners: Signal<warp::Quad>) -> Element {
+    let mut frame = use_signal(|| None::<std::rc::Rc<MountedData>>);
+    let mut rect = use_signal(|| None::<dioxus::html::geometry::PixelsRect>);
+    let mut dragging = use_signal(|| None::<usize>);
+    let q = corners();
+    let pts = q.iter().map(|(x, y)| format!("{x:.4},{y:.4}")).collect::<Vec<_>>().join(" ");
+    // Even-odd path: the whole frame minus the quad, to dim what gets cut.
+    let shade = format!("M0 0H1V1H0Z M{pts}Z");
+    let ratio = image.width as f64 / image.height.max(1) as f64;
+
+    let on_move = move |e: PointerEvent| {
+        let (Some(i), Some(r)) = (dragging(), rect()) else { return };
+        let p = e.client_coordinates();
+        let x = ((p.x - r.origin.x) / r.size.width).clamp(0.0, 1.0);
+        let y = ((p.y - r.origin.y) / r.size.height).clamp(0.0, 1.0);
+        corners.write()[i] = (x, y);
+    };
+
+    rsx! {
+        div {
+            class: if dragging().is_some() { "crop dragging" } else { "crop" },
+            style: "--ar: {ratio:.5}",
+            onmounted: move |e| frame.set(Some(e.data())),
+            onpointermove: on_move,
+            onpointerup: move |_| dragging.set(None),
+            onpointercancel: move |_| dragging.set(None),
+            img { src: "{image.url}", alt: "Receipt photo", draggable: "false" }
+            svg { view_box: "0 0 1 1", preserve_aspect_ratio: "none", "aria-hidden": "true",
+                path { class: "shade", d: "{shade}", fill_rule: "evenodd" }
+                polygon { class: "edge", points: "{pts}" }
+            }
+            for (i , (x , y)) in q.into_iter().enumerate() {
+                button {
+                    key: "{i}",
+                    class: "corner",
+                    style: "left: {x * 100.0:.3}%; top: {y * 100.0:.3}%",
+                    "aria-label": ["Top-left", "Top-right", "Bottom-right", "Bottom-left"][i],
+                    onpointerdown: move |e: PointerEvent| {
+                        e.prevent_default();
+                        capture_pointer(&e);
+                        dragging.set(Some(i));
+                        spawn(async move {
+                            if let Some(m) = frame() {
+                                rect.set(m.get_client_rect().await.ok());
+                            }
+                        });
+                    },
+                    onkeydown: move |e: KeyboardEvent| {
+                        let step = if e.modifiers().shift() { 0.05 } else { 0.005 };
+                        let (dx, dy) = match e.key() {
+                            Key::ArrowLeft => (-step, 0.0),
+                            Key::ArrowRight => (step, 0.0),
+                            Key::ArrowUp => (0.0, -step),
+                            Key::ArrowDown => (0.0, step),
+                            _ => return,
+                        };
+                        e.prevent_default();
+                        let (x, y) = corners()[i];
+                        corners.write()[i] = ((x + dx).clamp(0.0, 1.0), (y + dy).clamp(0.0, 1.0));
+                    },
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn capture_pointer(e: &PointerEvent) {
+    use wasm_bindgen::JsCast;
+    if let Some(ev) = e.data().downcast::<web_sys::PointerEvent>() {
+        if let Some(el) = ev.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
+            let _ = el.set_pointer_capture(ev.pointer_id());
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn capture_pointer(_: &PointerEvent) {}
+
+#[cfg(target_arch = "wasm32")]
+fn crop(q: &warp::Quad) -> Result<(), String> {
+    scan::apply_crop(q)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn crop(_: &warp::Quad) -> Result<(), String> {
+    Err("Cropping is only available in the browser build.".into())
 }
 
 #[cfg(target_arch = "wasm32")]

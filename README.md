@@ -46,6 +46,7 @@ cargo test --release ocr_samples -- --ignored --nocapture  # OCR on the photos i
 | `src/expr.rs` | Price cells accept expressions like `12.49-2.5` |
 | `src/receipt.rs` | OCR text → line items, discounts, subtotal/tax/total |
 | `src/ocr.rs` | ocrs engine, tilt-corrected row merging, browser glue |
-| `src/scan.rs` | Image loading onto a canvas (EXIF rotation, resizing) |
+| `src/scan.rs` | Image loading onto a canvas (EXIF rotation), crop glue |
+| `src/warp.rs` | 4-corner perspective crop (homography + bilinear resample) |
 | `assets/models/` | ocrs detection/recognition models (≈12 MB, fetched on first scan) |
 | `assets/dots.js`, `assets/theme.js` | Dot-grid background and theme toggle from axaril.github.io |

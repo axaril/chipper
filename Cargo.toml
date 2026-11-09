@@ -22,6 +22,10 @@ web-sys = { version = "0.3", features = [
     "HtmlCanvasElement",
     "CanvasRenderingContext2d",
     "ImageData",
+    "Event",
+    "EventTarget",
+    "MouseEvent",
+    "PointerEvent",
 ] }
 rten-imageproc = "0.28.0"
 
