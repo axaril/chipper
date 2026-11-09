@@ -1,0 +1,3 @@
+[target.wasm32-unknown-unknown]
+# rten (the ocrs inference engine) uses WASM SIMD for a large speed-up.
+rustflags = ["-C", "target-feature=+simd128"]

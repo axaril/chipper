@@ -1,0 +1,8 @@
+[application]
+name = "chipper"
+asset_dir = "assets"
+
+[web.app]
+title = "Chipper · Split the bill"
+# For GitHub Pages project sites set this to the repo name, e.g. "chipper".
+# base_path = "chipper"
