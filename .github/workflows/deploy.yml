@@ -20,29 +20,7 @@ env:
   DIOXUS_CLI_VERSION: 0.7.10
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: native
-
-      - name: Unit tests
-        run: cargo test
-
-      # OCR over the receipt photos in tests/ (release mode; debug is too slow).
-      - name: OCR sample tests
-        run: cargo test --release ocr_samples -- --ignored
-
   build:
-    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -55,8 +33,6 @@ jobs:
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: wasm
 
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@main

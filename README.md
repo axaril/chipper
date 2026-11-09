@@ -25,8 +25,9 @@ dx bundle --platform web --release
 ## Deploy
 
 Pushing to `main` runs [.github/workflows/deploy.yml](.github/workflows/deploy.yml):
-tests (including OCR over `tests/`), a `dx bundle` with `--base-path <repo>`, then
-a GitHub Pages deploy. One-time setup: in the repo's **Settings → Pages**, set
+a `dx bundle` with `--base-path <repo>`, then a GitHub Pages deploy. Tests run
+separately in [.github/workflows/test.yml](.github/workflows/test.yml) on pushes
+and pull requests. One-time setup: in the repo's **Settings → Pages**, set
 **Source** to **GitHub Actions**. The site is then at
 `https://<user>.github.io/<repo>/`.
 
