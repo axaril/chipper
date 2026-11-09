@@ -316,7 +316,7 @@ fn ItemsPanel(bill: Signal<Bill>, summary: Memo<Summary>) -> Element {
     rsx! {
         section { class: "panel",
             h2 { "Who had what" }
-            p { class: "hint-line", "Tap to assign. Right-click or long-press to give someone an extra share." }
+            p { class: "hint-line", "Tap to assign. Use Split to set portions, e.g. 1 and 3 for a ¼ / ¾ split." }
             if items.is_empty() {
                 p { class: "empty", "No items yet. Scan a receipt or add one by hand." }
             } else {
@@ -384,8 +384,34 @@ fn ItemsPanel(bill: Signal<Bill>, summary: Memo<Summary>) -> Element {
     }
 }
 
+/// Set one person's portion of an item (0 or less removes them).
+fn set_share(mut bill: Signal<Bill>, item_id: u32, pid: u32, w: f64) {
+    if let Some(it) = bill.write().item_mut(item_id) {
+        if w > 0.0 && w.is_finite() {
+            it.shares.insert(pid, (w * 1000.0).round() / 1000.0);
+        } else {
+            it.shares.remove(&pid);
+        }
+    }
+}
+
+/// Label for the split button: `all`, `solo`, `÷3`, or a ratio like `1:3`.
+fn split_label(item: &model::Item, people: &[model::Person]) -> String {
+    let ws: Vec<f64> = people.iter().map(|p| item.weight(p.id)).filter(|w| *w > 0.0).collect();
+    let uneven = ws.windows(2).any(|p| (p[0] - p[1]).abs() > 1e-9);
+    match ws.len() {
+        0 => "none".into(),
+        1 => "solo".into(),
+        n if uneven && n <= 3 => ws.iter().map(|w| fmt_num(*w)).collect::<Vec<_>>().join(":"),
+        _ if uneven => "custom".into(),
+        n if n == people.len() => "all".into(),
+        n => format!("÷{n}"),
+    }
+}
+
 #[component]
 fn ItemRow(bill: Signal<Bill>, item_id: u32) -> Element {
+    let mut editing = use_signal(|| false);
     let b = bill.read();
     let Some(item) = b.items.iter().find(|i| i.id == item_id).cloned() else {
         return rsx! {};
@@ -397,21 +423,13 @@ fn ItemRow(bill: Signal<Bill>, item_id: u32) -> Element {
     let valid = expr::eval(&item.price_expr).is_some() || item.price_expr.trim().is_empty();
     let is_expr = item.price_expr.trim_start_matches('-').contains(['+', '-', '*', '/', '(']);
     let w = item.total_weight();
-    let everyone = !people.is_empty() && people.iter().all(|p| item.weight(p.id) > 0.0);
-
-    let mut set_weight = move |pid: u32, f: fn(f64) -> f64| {
-        if let Some(it) = bill.write().item_mut(item_id) {
-            let nw = f(it.weight(pid));
-            if nw > 0.0 {
-                it.shares.insert(pid, nw);
-            } else {
-                it.shares.remove(&pid);
-            }
-        }
-    };
+    let label = split_label(&item, &people);
+    // Show the portion number in cells once the split isn't equal.
+    let uneven = item.shares.values().any(|v| (v - 1.0).abs() > 1e-9);
+    let cols = people.len() + 4;
 
     rsx! {
-        tr { class: if w <= 0.0 { "unassigned" } else { "" },
+        tr { class: if w <= 0.0 { "unassigned" } else if editing() { "editing" } else { "" },
             td { class: "c-name",
                 input {
                     value: "{item.name}",
@@ -442,13 +460,13 @@ fn ItemRow(bill: Signal<Bill>, item_id: u32) -> Element {
                             button {
                                 class: if pw > 0.0 { "cell on" } else { "cell" },
                                 style: "--c: {p.color()}",
-                                title: if pw > 0.0 { format!("{}: {}", p.name, money(portion)) } else { format!("Assign to {}", p.name) },
-                                onclick: move |_| set_weight(pid, |w| if w > 0.0 { 0.0 } else { 1.0 }),
+                                title: if pw > 0.0 { format!("{}: {} ({}/{})", p.name, money(portion), fmt_num(pw), fmt_num(w)) } else { format!("Assign to {}", p.name) },
+                                onclick: move |_| set_share(bill, item_id, pid, if pw > 0.0 { 0.0 } else { 1.0 }),
                                 oncontextmenu: move |e| {
                                     e.prevent_default();
-                                    set_weight(pid, |w| (w + 1.0).min(9.0));
+                                    set_share(bill, item_id, pid, (pw + 1.0).min(99.0));
                                 },
-                                if pw > 1.0 { "×{fmt_num(pw)}" } else if pw > 0.0 { "✓" } else { "" }
+                                if pw > 0.0 && uneven { "{fmt_num(pw)}" } else if pw > 0.0 { "✓" } else { "" }
                             }
                         }
                     }
@@ -456,21 +474,11 @@ fn ItemRow(bill: Signal<Bill>, item_id: u32) -> Element {
             }
             td { class: "c-split",
                 button {
-                    class: if w <= 0.0 { "chip warn" } else if everyone { "chip on" } else { "chip" },
-                    title: if everyone { "Clear" } else { "Split between everyone" },
-                    onclick: move |_| {
-                        let ids: Vec<u32> = bill.read().people.iter().map(|p| p.id).collect();
-                        if let Some(it) = bill.write().item_mut(item_id) {
-                            if everyone {
-                                it.shares.clear();
-                            } else {
-                                for id in ids {
-                                    it.shares.insert(id, 1.0);
-                                }
-                            }
-                        }
-                    },
-                    if w <= 0.0 { "none" } else if everyone { "all" } else if item.shares.len() == 1 { "solo" } else { "÷{fmt_num(w)}" }
+                    class: if w <= 0.0 { "chip warn" } else if editing() { "chip open" } else if label == "all" { "chip on" } else { "chip" },
+                    title: "Edit portions",
+                    "aria-expanded": "{editing()}",
+                    onclick: move |_| editing.toggle(),
+                    "{label}"
                 }
             }
             td { class: "c-del",
@@ -479,6 +487,96 @@ fn ItemRow(bill: Signal<Bill>, item_id: u32) -> Element {
                     title: "Remove item",
                     onclick: move |_| bill.write().items.retain(|i| i.id != item_id),
                     "✕"
+                }
+            }
+        }
+        if editing() {
+            tr { class: "portions-row",
+                td { colspan: "{cols}",
+                    div { class: "portions",
+                        for p in people.iter() {
+                            {
+                                let pid = p.id;
+                                let pw = item.weight(pid);
+                                let share = if w > 0.0 { pw / w } else { 0.0 };
+                                rsx! {
+                                    div { key: "{pid}", class: if pw > 0.0 { "portion on" } else { "portion" }, style: "--c: {p.color()}",
+                                        span { class: "tag", "{p.initials()}" }
+                                        span { class: "pname", "{p.name}" }
+                                        div { class: "stepper",
+                                            button {
+                                                "aria-label": "Fewer portions for {p.name}",
+                                                disabled: pw <= 0.0,
+                                                onclick: move |_| set_share(bill, item_id, pid, pw - 1.0),
+                                                "−"
+                                            }
+                                            input {
+                                                r#type: "number",
+                                                min: "0",
+                                                step: "1",
+                                                inputmode: "decimal",
+                                                "aria-label": "Portions for {p.name}",
+                                                value: "{fmt_num(pw)}",
+                                                oninput: move |e| {
+                                                    let v = e.value();
+                                                    if let Ok(v) = v.trim().parse::<f64>() {
+                                                        set_share(bill, item_id, pid, v);
+                                                    } else if v.trim().is_empty() {
+                                                        set_share(bill, item_id, pid, 0.0);
+                                                    }
+                                                },
+                                            }
+                                            button {
+                                                "aria-label": "More portions for {p.name}",
+                                                onclick: move |_| set_share(bill, item_id, pid, pw.floor() + 1.0),
+                                                "+"
+                                            }
+                                        }
+                                        span { class: "pshare",
+                                            if pw > 0.0 {
+                                                "{fmt_num(pw)}/{fmt_num(w)} · {share * 100.0:.0}% · {money(price * share)}"
+                                            } else {
+                                                "—"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        div { class: "portion-actions",
+                            button {
+                                class: "chip",
+                                onclick: move |_| {
+                                    let ids: Vec<u32> = bill.read().people.iter().map(|p| p.id).collect();
+                                    if let Some(it) = bill.write().item_mut(item_id) {
+                                        it.shares = ids.into_iter().map(|id| (id, 1.0)).collect();
+                                    }
+                                },
+                                "everyone equally"
+                            }
+                            button {
+                                class: "chip",
+                                onclick: move |_| {
+                                    if let Some(it) = bill.write().item_mut(item_id) {
+                                        for v in it.shares.values_mut() {
+                                            *v = 1.0;
+                                        }
+                                    }
+                                },
+                                "equal among assigned"
+                            }
+                            button {
+                                class: "chip",
+                                onclick: move |_| {
+                                    if let Some(it) = bill.write().item_mut(item_id) {
+                                        it.shares.clear();
+                                    }
+                                },
+                                "clear"
+                            }
+                            button { class: "chip on", onclick: move |_| editing.set(false), "done" }
+                        }
+                    }
                 }
             }
         }

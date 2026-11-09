@@ -352,6 +352,27 @@ mod tests {
     }
 
     #[test]
+    fn splits_by_portions() {
+        let mut b = Bill::empty();
+        let (a, c) = (b.people[0].id, b.people[1].id);
+        let id = b.add_item("Pizza", "10");
+        let it = b.item_mut(id).unwrap();
+        it.shares.insert(a, 1.0);
+        it.shares.insert(c, 3.0);
+        let s = b.summary();
+        assert_eq!((s.people[0].cents, s.people[1].cents), (250, 750));
+        let p = &s.people[1].items[0];
+        assert_eq!((p.weight, p.of), (3.0, 4.0));
+
+        // Fractional portions work too: 0.5 vs 1.5 is the same 1:3 ratio.
+        let it = b.item_mut(id).unwrap();
+        it.shares.insert(a, 0.5);
+        it.shares.insert(c, 1.5);
+        let s = b.summary();
+        assert_eq!((s.people[0].cents, s.people[1].cents), (250, 750));
+    }
+
+    #[test]
     fn cents_always_add_up() {
         let mut b = Bill::empty();
         b.add_person("C");

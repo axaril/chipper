@@ -510,6 +510,53 @@ table.items { width: 100%; border-collapse: collapse; }
 }
 .cell:active { transform: translate(1px, 1px); box-shadow: none; }
 
+/* Inline portion editor under an item row. */
+.chip.open { border-color: var(--fg); background: var(--fg); color: var(--bg); }
+.items tr.editing td { border-bottom: 0; }
+.items tr.portions-row td { padding: 0 0.25rem 0.75rem; border-top: 0; }
+.portions {
+  padding: 0.6rem 0.75rem;
+  border: 1px dashed color-mix(in srgb, var(--fg) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.portion {
+  display: grid;
+  grid-template-columns: auto minmax(4rem, 1fr) auto minmax(9rem, auto);
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.portion:not(.on) .tag { opacity: 0.35; box-shadow: none; }
+.portion:not(.on) .pname { color: var(--muted); }
+.pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.stepper { display: inline-flex; border: 1px solid var(--rule); }
+.stepper button {
+  width: 1.9rem;
+  border: 0;
+  background: transparent;
+  font: 600 1rem/1 var(--mono);
+}
+.stepper button:hover:not(:disabled) { background: var(--fg); color: var(--bg); }
+.stepper button:disabled { opacity: 0.3; cursor: default; }
+.items .stepper input {
+  width: 3.2rem;
+  border: 0;
+  border-inline: 1px solid var(--rule);
+  font-family: var(--mono);
+  text-align: center;
+  -moz-appearance: textfield;
+}
+.stepper input::-webkit-inner-spin-button,
+.stepper input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.pshare { color: var(--muted); font: 0.75rem/1.4 var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.portion.on .pshare { color: var(--c); }
+.portion-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; justify-content: flex-end; margin-top: 0.6rem; }
+@media (max-width: 30rem) {
+  .portion { grid-template-columns: auto 1fr auto; }
+  .pshare { grid-column: 2 / -1; text-align: left; }
+}
+
 /* ---------- results ---------- */
 .stack { display: flex; gap: 2px; height: 0.6rem; margin-bottom: 1rem; }
 .seg { flex-basis: 0; min-width: 3px; background: var(--c); transition: flex-grow 0.3s ease; }
