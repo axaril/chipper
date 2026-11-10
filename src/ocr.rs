@@ -181,10 +181,10 @@ mod web {
         if let Some(e) = ENGINE.with_borrow(|e| e.clone()) {
             return Ok(e);
         }
-        progress(0.03, "Downloading OCR models (≈12 MB, once)…");
+        progress(0.03, "Downloading OCR models (≈12 MB, first scan only)…");
         yield_now().await;
         let det = fetch_bytes(&DETECTION_MODEL.to_string()).await?;
-        progress(0.08, "Downloading OCR models (≈12 MB, once)…");
+        progress(0.08, "Downloading OCR models (≈12 MB, first scan only)…");
         let rec = fetch_bytes(&RECOGNITION_MODEL.to_string()).await?;
         progress(0.12, "Loading OCR models…");
         yield_now().await;

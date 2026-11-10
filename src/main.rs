@@ -31,6 +31,7 @@ fn App() -> Element {
     // The scan panel stays mounted (so a running scan survives) but hidden
     // until "Scan bill" is pressed.
     let show_scan = use_signal(|| false);
+    use_effect(register_service_worker);
 
     rsx! {
         document::Title { "Chipper – Split the bill" }
@@ -58,6 +59,24 @@ fn App() -> Element {
             }
         }
     }
+}
+
+/// Register `public/sw.js`, which caches the hashed bundle files (the OCR
+/// models above all) so they download once. Release builds only, so
+/// `dx serve` never serves stale code.
+fn register_service_worker() {
+    if cfg!(debug_assertions) {
+        return;
+    }
+    // Site root, including any `--base-path`: whatever precedes `assets/`.
+    let css = CSS.to_string();
+    let base = css.find("assets/").map_or("/", |i| &css[..i]);
+    let sw = format!("{base}sw.js");
+    document::eval(&format!(
+        r#"if ("serviceWorker" in navigator)
+               navigator.serviceWorker.register({sw:?}, {{ scope: {base:?} }})
+                   .catch((e) => console.warn("service worker not registered:", e));"#
+    ));
 }
 
 #[component]

@@ -48,5 +48,6 @@ cargo test --release ocr_samples -- --ignored --nocapture  # OCR on the photos i
 | `src/ocr.rs` | ocrs engine, tilt-corrected row merging, browser glue |
 | `src/scan.rs` | Image loading onto a canvas (EXIF rotation), crop glue |
 | `src/warp.rs` | 4-corner perspective crop (homography + bilinear resample) |
-| `assets/models/` | ocrs detection/recognition models (≈12 MB, fetched on first scan) |
+| `assets/models/` | ocrs detection/recognition models (≈12 MB, fetched on first scan, then cached) |
+| `public/sw.js` | Service worker: caches the hashed bundle files (models, wasm) and the page, so later visits and offline use skip the download |
 | `assets/dots.js`, `assets/theme.js` | Dot-grid background and theme toggle from axaril.github.io |
