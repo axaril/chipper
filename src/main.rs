@@ -12,10 +12,16 @@ use receipt::{ParsedReceipt, fmt_num};
 
 const CSS: Asset = asset!("/assets/main.css");
 const DOTS_JS: Asset = asset!("/assets/dots.js");
+const OCR_POOL_JS: Asset = asset!("/assets/ocr-pool.js");
 const THEME_JS: Asset = asset!("/assets/theme.js");
 const FILE_INPUT_ID: &str = "receipt-file";
 
 fn main() {
+    // OCR workers load this same wasm only for its `ocr_worker_*` exports.
+    #[cfg(target_arch = "wasm32")]
+    if web_sys::window().is_none() {
+        return;
+    }
     dioxus::launch(App);
 }
 
@@ -39,6 +45,7 @@ fn App() -> Element {
         document::Stylesheet { href: CSS }
         document::Script { src: THEME_JS }
         document::Script { src: DOTS_JS, defer: true }
+        document::Script { src: OCR_POOL_JS }
         canvas { id: "dots", "aria-hidden": "true" }
         div { class: "page",
             Header { bill, show_scan }

@@ -5,7 +5,8 @@
 // ≈12 MB OCR models as well as the wasm, JS and CSS. When a new build ships a
 // file under a new hash, older copies with the same name are dropped.
 //
-// Page loads (index.html) go network-first, falling back to the cached copy,
+// Page loads (index.html) and the unhashed OCR worker script go
+// network-first, falling back to the cached copy,
 // so the app also opens offline.
 
 const CACHE = "chipper-v1";
@@ -31,7 +32,7 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (HASHED.test(url.pathname)) {
     event.respondWith(cacheFirst(req, url));
-  } else if (req.mode === "navigate") {
+  } else if (req.mode === "navigate" || url.pathname.endsWith("/ocr-worker.js")) {
     event.respondWith(networkFirst(req));
   }
 });

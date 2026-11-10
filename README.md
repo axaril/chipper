@@ -35,7 +35,7 @@ and pull requests. One-time setup: in the repo's **Settings → Pages**, set
 
 ```sh
 cargo test                                               # math, parser, price expressions
-cargo test --release ocr_samples -- --ignored --nocapture  # OCR on the photos in tests/
+cargo test --release -- --ignored --nocapture  # OCR on the photos in tests/ (+ worker chunking)
 ```
 
 ## Layout
@@ -45,7 +45,8 @@ cargo test --release ocr_samples -- --ignored --nocapture  # OCR on the photos i
 | `src/model.rs` | Bill, people, items, the split math (matches the spreadsheet) |
 | `src/expr.rs` | Price cells accept expressions like `12.49-2.5` |
 | `src/receipt.rs` | OCR text → line items, discounts, subtotal/tax/total |
-| `src/ocr.rs` | ocrs engine, tilt-corrected row merging, browser glue |
+| `src/ocr.rs` | ocrs engine, tilt-corrected row merging, worker exports and browser glue |
+| `assets/ocr-pool.js`, `public/ocr-worker.js` | Web Worker pool: up to 4 workers recognise lines in parallel (≈2.3× faster); falls back to the main thread |
 | `src/scan.rs` | Image loading onto a canvas (EXIF rotation), crop glue |
 | `src/warp.rs` | 4-corner perspective crop (homography + bilinear resample) |
 | `assets/models/` | ocrs detection/recognition models (≈12 MB, fetched on first scan, then cached) |

@@ -35,4 +35,4 @@ jobs:
 
       # OCR over the receipt photos in tests/ (release mode; debug is too slow).
       - name: OCR sample tests
-        run: cargo test --release ocr_samples -- --ignored
+        run: cargo test --release -- --ignored
