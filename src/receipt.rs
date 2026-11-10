@@ -49,7 +49,7 @@ pub fn fmt_num(v: f64) -> String {
 /// at the end of a line (optionally followed by a tax flag or a stray char).
 static PRICE_TAIL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?i)^(?P<head>.*?)[\s:]*(?P<neg1>-)?\s*\$?\s*(?P<amt>\d{1,5}(?:,\d{3})*[.,:]\s?\d{2}|[.,]\d{2}|\d{1,3}\s\d{2})\s*(?P<neg2>-)?(?:\s*[A-Z*.~,^]{1,3}|\s+\S)?\s*$",
+        r"(?i)^(?P<head>.*?)[\s:]*(?P<neg1>-)?\s*\$?\s*(?P<amt>\d{1,5}(?:,\d{3})*\s?[.,:]\s?\d{2}|[.,]\d{2}|\d{1,3}\s\d{2})\s*(?P<neg2>-)?(?P<flag>\s*[A-Z*.~,^]{1,3}|\s+\S)?\s*$",
     )
     .unwrap()
 });
@@ -59,6 +59,14 @@ static FIRST_AMOUNT: LazyLock<Regex> =
 /// Totals lines where OCR dropped the decimal point: `SUBTOTAL 15713`.
 static NODEC_TAIL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?P<head>.*?)\s*[^\d\s]?(?P<amt>\d{3,7})\s*$").unwrap());
+/// Item line whose price lost its decimal point, in its own OCR column
+/// (columns are joined with three spaces): `CARROTS CELLO   99`.
+static NODEC_ITEM: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?P<head>.*[A-Za-z]{2}.*?)\s{3,}(?P<amt>\d{2,4})(?:\s?[A-Z])?$").unwrap());
+/// Quantity / weight line under an item name: `2 @ $1.49 EACH`,
+/// `1.85 lb @ $0.49 / lb`, `2 5 for $3.00` (OCR often garbles `@` and `lb`).
+static QTY_HEAD: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^\d+(?:\.\d+)?\s.*(?:@|\$\s?\d|\bfor\b|\beach\b|/)").unwrap());
 static QTY_LINE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^\s*\d+(?:\.\d+)?\s*(?:@|x|ea\b|lb\b|/lb)").unwrap());
 /// Optional one-letter flag (`E`) then one or more item codes.
@@ -74,7 +82,7 @@ const SKIP_WORDS: &[&str] = &[
     "balance", "approved", "auth", "card", "payment", "chip", "account", "acct", "ref", "amount",
     "you saved", "items sold", "number of items", "points", "rewards", "member", "invoice",
     "thank", "phone", "tel", "receipt", "cashier", "register", "trans", "aid:", "tvr", "eft",
-    "merchant",
+    "merchant", "tare",
 ];
 
 #[derive(PartialEq)]
@@ -117,7 +125,10 @@ pub fn parse_text(text: &str) -> ParsedReceipt {
             continue;
         }
         let lower = line.to_lowercase();
-        let caps = PRICE_TAIL.captures(line);
+        let caps = PRICE_TAIL.captures(line).filter(|c| {
+            let flag = c.name("flag").map_or("", |f| f.as_str()).trim().to_lowercase();
+            !matches!(flag.as_str(), "lb" | "1b" | "ib" | "kg" | "oz")
+        });
         let kind = classify(caps.as_ref().map_or(line, |c| c.name("head").unwrap().as_str()));
 
         if out.merchant.is_none() && out.items.is_empty() && caps.is_none() && kind == Kind::Other && WORD3.is_match(line) {
@@ -140,6 +151,11 @@ pub fn parse_text(text: &str) -> ParsedReceipt {
                         .and_then(|c| c["amt"].parse::<f64>().ok().map(|a| (c["head"].trim().to_string(), a / 100.0)))
                 })
                 .map(|(h, a)| (h, a, false)),
+            None if !in_totals => NODEC_ITEM
+                .captures(line)
+                // Coded (Costco-style) lines keep their decimals; a bare number there is noise.
+                .filter(|c| !DIGIT_RUN.is_match(&c["head"]))
+                .and_then(|c| c["amt"].parse::<f64>().ok().map(|a| (c["head"].trim().to_string(), a / 100.0, false))),
             None => None,
         };
 
@@ -205,7 +221,9 @@ pub fn parse_text(text: &str) -> ParsedReceipt {
             continue;
         }
 
-        if QTY_LINE.is_match(&head) && !LETTERS.is_match(&QTY_LINE.replace(&head, "")) {
+        let qty_line = (QTY_LINE.is_match(&head) && !LETTERS.is_match(&QTY_LINE.replace(&head, "")))
+            || (pending_name.is_some() && QTY_HEAD.is_match(&head));
+        if qty_line {
             // "2 @ 3.99   7.98" — belongs to the name on the previous line.
             if let Some(name) = pending_name.take() {
                 out.items.push(ParsedItem { name, price: amount, discount: 0.0 });
@@ -322,6 +340,40 @@ mod tests {
         assert_eq!(r.tax, Some(4.04));
         assert_eq!(r.tip, Some(9.0));
         assert_eq!(r.total, Some(58.54));
+    }
+
+    /// OCR from `tests/wholefoods-tribeca.jpg` and `tests/kroger-north-beach.jpg`
+    /// (abridged): quantity/weight lines under names, tare weights, a split
+    /// `$2 .99`, and prices that lost their decimal point.
+    #[test]
+    fn grocery_quantity_lines() {
+        let text = "WHOLE FOODS
+        CV LIMES
+        2  5 for $3.00   $1.20 F
+        HASS AVOCADOS
+        2 @ $1.49 EACH   $2.98 F
+        CV BANANA
+        1.85 lh ? $0.497 b   $0.91 F
+        Tare Weight 0.01lb
+        365 L NON GMO BRW EGG   $2 .99 F
+        CARROTS CELLO   99
+        KRO BROWN SUGAR   169
+        817-562-3900
+        Subtotal   $11.47
+        Sod Items:   18";
+        let r = parse_text(text);
+        let got: Vec<(&str, String)> = r.items.iter().map(|i| (i.name.as_str(), i.price_expr())).collect();
+        assert_eq!(
+            got,
+            [
+                ("CV LIMES", "1.2".to_string()),
+                ("HASS AVOCADOS", "2.98".into()),
+                ("CV BANANA", "0.91".into()),
+                ("L NON GMO BRW EGG", "2.99".into()),
+                ("CARROTS CELLO", "0.99".into()),
+                ("KRO BROWN SUGAR", "1.69".into()),
+            ]
+        );
     }
 
     #[test]
