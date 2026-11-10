@@ -123,6 +123,7 @@ h2 {
 }
 h2::before { content: ""; width: 0.55em; height: 0.55em; background: currentColor; }
 h2::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+h2 .x { order: 1; margin: -0.5rem -0.25rem -0.5rem 0; letter-spacing: 0; }
 
 .hint-line { margin: -0.25rem 0 1rem; color: var(--muted); font-size: 0.85rem; }
 .panel > .hint-line:last-child { margin: 1rem 0 0; }

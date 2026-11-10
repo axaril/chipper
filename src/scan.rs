@@ -4,9 +4,8 @@
 use dioxus::prelude::*;
 use serde::Deserialize;
 
-use crate::warp::Quad;
-
 /// Hidden canvas holding the flattened receipt that OCR reads.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 pub const CANVAS_ID: &str = "chipper-canvas";
 /// Hidden canvas holding the EXIF-rotated photo, before cropping.
 const SOURCE_ID: &str = "chipper-source";
@@ -97,7 +96,7 @@ pub async fn load_image(input_id: &str) -> Result<LoadedImage, String> {
 
 /// Flatten `quad` of the source photo onto the OCR canvas, scaled for OCR.
 #[cfg(target_arch = "wasm32")]
-pub fn apply_crop(quad: &Quad) -> Result<(), String> {
+pub fn apply_crop(quad: &crate::warp::Quad) -> Result<(), String> {
     use wasm_bindgen::{Clamped, JsCast};
     let err = |e: wasm_bindgen::JsValue| format!("{e:?}");
     let doc = web_sys::window().and_then(|w| w.document()).ok_or("no document")?;

@@ -28,6 +28,9 @@ fn App() -> Element {
     let bill = use_signal(storage::load_bill);
     use_effect(move || storage::save_bill(&bill.read()));
     let summary = use_memo(move || bill.read().summary());
+    // The scan panel stays mounted (so a running scan survives) but hidden
+    // until "Scan bill" is pressed.
+    let show_scan = use_signal(|| false);
 
     rsx! {
         document::Title { "Chipper – Split the bill" }
@@ -37,10 +40,10 @@ fn App() -> Element {
         document::Script { src: DOTS_JS, defer: true }
         canvas { id: "dots", "aria-hidden": "true" }
         div { class: "page",
-            Header { bill }
+            Header { bill, show_scan }
             div { class: "layout",
                 div { class: "col",
-                    ScanPanel { bill }
+                    ScanPanel { bill, show: show_scan }
                     ItemsPanel { bill, summary }
                 }
                 div { class: "col side",
@@ -73,7 +76,7 @@ fn ThemeToggle() -> Element {
 }
 
 #[component]
-fn Header(bill: Signal<Bill>) -> Element {
+fn Header(bill: Signal<Bill>, mut show_scan: Signal<bool>) -> Element {
     let title = bill.read().title.clone();
     rsx! {
         div { class: "panel hero",
@@ -110,6 +113,20 @@ fn Header(bill: Signal<Bill>) -> Element {
                         }
                     }
                     li {
+                        button {
+                            "aria-controls": "scan-panel",
+                            "aria-expanded": "{show_scan()}",
+                            onclick: move |_| {
+                                show_scan.set(true);
+                                document::eval(
+                                    "requestAnimationFrame(() => { const p = document.getElementById('scan-panel');                                      p && p.scrollIntoView({ behavior: 'smooth', block: 'start' });                                      const z = p && p.querySelector('input[type=file]'); z && z.focus({ preventScroll: true }); })",
+                                );
+                            },
+                            span { "Scan bill" }
+                            span { class: "hint", "read a receipt" }
+                        }
+                    }
+                    li {
                         button { onclick: move |_| bill.set(Bill::example()),
                             span { "Load example" }
                             span { class: "hint", "sample bill" }
@@ -132,7 +149,7 @@ enum ScanState {
 }
 
 #[component]
-fn ScanPanel(bill: Signal<Bill>) -> Element {
+fn ScanPanel(bill: Signal<Bill>, mut show: Signal<bool>) -> Element {
     let mut state = use_signal(|| ScanState::Idle);
     let mut preview = use_signal(|| None::<String>);
     let mut raw_text = use_signal(String::new);
@@ -188,8 +205,11 @@ fn ScanPanel(bill: Signal<Bill>) -> Element {
     };
 
     rsx! {
-        section { class: "panel",
-            h2 { "Scan" }
+        section { id: "scan-panel", class: "panel", hidden: !show(),
+            h2 {
+                "Scan"
+                button { class: "x", title: "Hide scanner", "aria-label": "Hide scanner", onclick: move |_| show.set(false), "✕" }
+            }
             label { class: if busy { "dropzone busy" } else { "dropzone" },
                 input {
                     id: FILE_INPUT_ID,
@@ -242,6 +262,7 @@ fn ScanPanel(bill: Signal<Bill>) -> Element {
                         on_apply: move |replace: bool| {
                             bill.write().apply_receipt(&r, replace);
                             state.set(ScanState::Idle);
+                            show.set(false);
                         },
                         on_discard: move |_| state.set(ScanState::Idle),
                     }
